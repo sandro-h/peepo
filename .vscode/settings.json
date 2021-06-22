@@ -1,0 +1,9 @@
+{
+    "python.formatting.provider": "yapf",
+    "editor.formatOnSave": true,
+    "python.formatting.yapfArgs": [
+        "--style",
+        "${workspaceFolder}/.yapfrc"
+    ],
+    "python.linting.pylintEnabled": true
+}
