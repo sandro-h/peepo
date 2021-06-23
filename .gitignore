@@ -4,4 +4,4 @@ __pycache__/
 build/
 dist/
 spool/
-test_file
+test_file*

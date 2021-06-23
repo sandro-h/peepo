@@ -5,6 +5,7 @@ import sys
 import subprocess
 import pty
 import hashlib
+import re
 import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -50,40 +51,9 @@ def run(lines):
     cmds_ran = 0
     k = 0
     for line in lines:
-        is_last = k == len(lines) - 1
-        if not is_last:
-            if Path(get_output_file(line)).is_file():
-                ran_previous = False
-            else:
-                if k > 0 and not ran_previous:
-                    with open(get_output_file(lines[k - 1]), 'rb') as file:
-                        cur_stdin = file.read()
-
-                result = subprocess.run(['bash', '-c', line["content"]],
-                                        stdout=subprocess.PIPE,
-                                        input=cur_stdin,
-                                        stderr=subprocess.DEVNULL)
-                if result.returncode != 0:
-                    raise Exception(result.returncode)
-                cur_stdin = result.stdout
-                with open(get_output_file(line), "wb") as output:
-                    output.write(cur_stdin)
-                ran_previous = True
-                cmds_ran += 1
-
-        else:
-            # Always run last command (ignore cached output) to get proper shell coloring
-            def read(fd):
-                data = os.read(fd, 1024)
-                return data
-
-            cmd = line["content"]
-            if k > 0:
-                cmd = f"cat {get_output_file(lines[k - 1])} | {cmd}"
-            pty.spawn(['bash', '-c', cmd], read)
-            # TODO: react to fail exit code
+        ran_previous, cur_stdin = exec_command(line, lines, k, ran_previous, cur_stdin)
+        if ran_previous:
             cmds_ran += 1
-
         k += 1
 
     print(f"Ran {cmds_ran}/{len(lines)} commands")
@@ -95,8 +65,8 @@ def parse_input_file(input_file):
     py_block = ""
     with open(input_file, 'r') as file:
         for line in file:
-            line = line.strip()
-            if line.startswith("#"):
+            line = line.rstrip()
+            if line.startswith("#") or line.strip() == "":
                 continue
             if line == "py":
                 if not in_py_block:
@@ -104,11 +74,13 @@ def parse_input_file(input_file):
                     py_block = ""
                 else:
                     in_py_block = False
-                    lines.append({"type": "python", "content": py_block, "hash": "TODO"})
-            if in_py_block:
-                py_block += line + "\n"
+                    lines.append({"type": "python", "content": py_block})
             else:
-                lines.append({"type": "shell", "content": line, "hash": "TODO"})
+                if in_py_block:
+                    # TODO: handle indendation better than cutting off first 4 chars
+                    py_block += line[4:] + "\n"
+                else:
+                    lines.append({"type": "command", "content": line})
 
     cur_hash = ""
     for line in lines:
@@ -116,11 +88,71 @@ def parse_input_file(input_file):
         cur_hash = hash_object.hexdigest()
         line["hash"] = cur_hash
 
+        if line["type"] == "python":
+            py_file_name = get_tmp_python_file(line)
+            with open(py_file_name, 'w') as py_file:
+                py_file.write(line["content"])
+            line["content"] = f"python {py_file_name}"
+
     return lines
 
 
+def exec_command(line, lines, k, ran_previous, cur_stdin):
+    is_last = k == len(lines) - 1
+    if not is_last:
+        if Path(get_output_file(line)).is_file():
+            return False, cur_stdin
+        else:
+            if k > 0 and not ran_previous:
+                with open(get_output_file(lines[k - 1]), 'rb') as file:
+                    cur_stdin = file.read()
+
+            result = subprocess.run(['bash', '-c', line["content"]],
+                                    stdout=subprocess.PIPE,
+                                    input=cur_stdin,
+                                    stderr=subprocess.DEVNULL)
+            if result.returncode != 0:
+                raise Exception(result.returncode)
+            cur_stdin = result.stdout
+            with open(get_output_file(line), "wb") as output:
+                output.write(re.sub(r"\x1b\[[0-9;]*m", '', cur_stdin.decode("utf8")).encode("utf8"))
+            ran_previous = True
+            return True, cur_stdin
+
+    else:
+        if Path(get_col_output_file(line)).is_file():
+            with open(get_col_output_file(line), 'rb') as file:
+                print(file.read().decode("utf8"))
+            return False, cur_stdin
+        else:
+            with open(get_col_output_file(line), "wb") as output:
+
+                def read(fd):
+                    data = os.read(fd, 1024)
+                    output.write(data)
+                    return data
+
+                cmd = line["content"]
+                if k > 0:
+                    cmd = f"cat {get_output_file(lines[k - 1])} | {cmd}"
+                returncode = pty.spawn(['bash', '-c', cmd], read)
+                if returncode != 0:
+                    os.remove(get_col_output_file(line))
+                    raise Exception(returncode)
+
+            return True, cur_stdin
+
+
 def get_output_file(line):
-    return f"spool/output{line['hash']}"
+    return f"spool/{line['hash']}.out"
+
+
+def get_col_output_file(line):
+    return f"spool/{line['hash']}.col.out"
+
+
+def get_tmp_python_file(line):
+    return f"spool/{line['hash']}.py"
 
 
 class Handler(FileSystemEventHandler):
