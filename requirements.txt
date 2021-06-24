@@ -1,9 +1,1 @@
-astroid==2.5.6
-isort==5.9.1
-lazy-object-proxy==1.6.0
-mccabe==0.6.1
-pylint==2.8.3
-toml==0.10.2
 watchdog==2.1.2
-wrapt==1.12.1
-yapf==0.31.0

@@ -9,12 +9,14 @@ venv:
 build/install: venv requirements.txt
 	${ACTIVATE} && pip install --upgrade pip wheel
 	${ACTIVATE} && pip install -r requirements.txt
+	${ACTIVATE} && pip install -r requirements-dev.txt
 	mkdir -p build && touch build/install
 
 install: build/install
 
 freeze:
-	${ACTIVATE} && pip freeze | sed '/pkg-resources==0.0.0/d' > requirements.txt
+	${ACTIVATE} && pip freeze | sed '/pkg-resources==0.0.0/d' > requirements-dev.txt
+	echo "Reminder: non-dev requirements must be copied to requirements.txt by hand!"
 
 clean-install:
 	rm -rf venv install
