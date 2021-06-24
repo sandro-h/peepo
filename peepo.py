@@ -47,7 +47,7 @@ def main():
     try:
         while True:
             time.sleep(5)
-    except:
+    except:  # pylint: disable=bare-except
         observer.stop()
 
     observer.join()
@@ -55,8 +55,8 @@ def main():
 
 def tidy_spool():
     paths = sorted(Path(SPOOL_DIR).iterdir(), key=os.path.getmtime, reverse=True)
-    for p in paths[MAX_SPOOL_FILES:]:
-        os.remove(p)
+    for path in paths[MAX_SPOOL_FILES:]:
+        os.remove(path)
 
 
 def on_input_file_modified(file, input_file):
@@ -66,9 +66,9 @@ def on_input_file_modified(file, input_file):
 
 def parse_and_run(input_file):
     commands = parse_input_file(input_file)
-    ok, cmds_ran = run(commands)
+    success, cmds_ran = run(commands)
 
-    if ok:
+    if success:
         pre_str = "\033[0;32mOK"
     else:
         pre_str = "\033[0;31mFAILED"
@@ -91,6 +91,7 @@ def run(commands):
 
         # Command executed previously, use cached output:
         if Path(stdout_file_path).is_file():
+            Path(stdout_file_path).touch()
             if last:
                 with open(stdout_file_path, 'rb') as file:
                     print(file.read().decode("utf8"))
@@ -112,8 +113,8 @@ def run(commands):
 def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):
     if use_color:
 
-        def read(fd):
-            data = os.read(fd, 1024)
+        def read(pty_stdout):
+            data = os.read(pty_stdout, 1024)
             stdout_file.write(data)
             return data
 
@@ -121,12 +122,12 @@ def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):
             cmd = f"cat {stdin_file_path} | {cmd}"
 
         return pty.spawn(['bash', '-c', cmd], read)
-    else:
-        stdin_file = open(stdin_file_path, 'rb') if stdin_file_path is not None else None
-        result = subprocess.run(['bash', '-c', cmd], stdout=stdout_file, stdin=stdin_file)
-        if stdin_file is not None:
-            stdin_file.close()
-        return result.returncode
+
+    stdin_file = open(stdin_file_path, 'rb') if stdin_file_path is not None else None
+    result = subprocess.run(['bash', '-c', cmd], stdout=stdout_file, stdin=stdin_file, check=False)
+    if stdin_file is not None:
+        stdin_file.close()
+    return result.returncode
 
 
 def parse_input_file(input_file):
@@ -197,8 +198,9 @@ class Handler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         if event.is_directory:
-            return None
-        elif event.event_type == 'modified':
+            return
+
+        if event.event_type == 'modified':
             self.on_mod(event.src_path)
 
 
