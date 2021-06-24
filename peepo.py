@@ -13,6 +13,22 @@ from watchdog.events import FileSystemEventHandler
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
 
+PYTHON_HELPER_FUNCS = """
+import json
+import sys
+
+def from_json():
+    return json.load(sys.stdin)
+
+def from_string():
+    return sys.stdin.read()
+
+def from_lines():
+    for line in sys.stdin:
+        yield line.rstrip()
+
+"""
+
 
 def main():
 
@@ -140,7 +156,7 @@ def parse_input_file(input_file):
         if command["type"] == "python":
             py_file_name = get_tmp_python_file(command)
             with open(py_file_name, 'w') as py_file:
-                py_file.write(command["content"])
+                py_file.write(PYTHON_HELPER_FUNCS + command["content"])
             command["content"] = f"python {py_file_name}"
 
     return commands
