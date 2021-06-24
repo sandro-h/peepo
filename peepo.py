@@ -12,6 +12,7 @@ from watchdog.events import FileSystemEventHandler
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
+MAX_SPOOL_FILES = 200
 
 PYTHON_HELPER_FUNCS = """
 import json
@@ -33,6 +34,8 @@ def from_lines():
 def main():
 
     os.makedirs(SPOOL_DIR, exist_ok=True)
+    tidy_spool()
+
     input_file = sys.argv[1]
 
     parse_and_run(input_file)
@@ -48,6 +51,12 @@ def main():
         observer.stop()
 
     observer.join()
+
+
+def tidy_spool():
+    paths = sorted(Path(SPOOL_DIR).iterdir(), key=os.path.getmtime, reverse=True)
+    for p in paths[MAX_SPOOL_FILES:]:
+        os.remove(p)
 
 
 def on_input_file_modified(file, input_file):
