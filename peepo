@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SCRIPT_DIR="$( cd "$( dirname $(readlink -f "${BASH_SOURCE[0]}") )" &> /dev/null && pwd )"
 
-cd "$SCRIPT_DIR"
+pushd "$SCRIPT_DIR" > /dev/null
 
 if [ ! -d venv ]; then
     python3 -m venv venv
@@ -12,4 +12,7 @@ if [ ! -d venv ]; then
 fi
 
 . venv/bin/activate
-./peepo.py "$@"
+
+popd > /dev/null
+
+"$SCRIPT_DIR/peepo.py" "$@"
