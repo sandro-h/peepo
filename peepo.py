@@ -40,17 +40,19 @@ def main():
 
     parse_and_run(input_file)
 
-    event_handler = Handler(lambda f: on_input_file_modified(f, input_file))
-    observer = Observer()
-    observer.schedule(event_handler, '.', recursive=False)
-    observer.start()
-    try:
-        while True:
-            time.sleep(5)
-    except:  # pylint: disable=bare-except
-        observer.stop()
+    only_once = len(sys.argv) > 2 and sys.argv[2] == "--once"
+    if not only_once:
+        event_handler = Handler(lambda f: on_input_file_modified(f, input_file))
+        observer = Observer()
+        observer.schedule(event_handler, '.', recursive=False)
+        observer.start()
+        try:
+            while True:
+                time.sleep(5)
+        except:  # pylint: disable=bare-except
+            observer.stop()
 
-    observer.join()
+        observer.join()
 
 
 def tidy_spool():
@@ -69,9 +71,9 @@ def parse_and_run(input_file):
     success, cmds_ran = run(commands)
 
     if success:
-        pre_str = "\033[0;32mOK"
+        pre_str = "\n\033[0;32mOK"
     else:
-        pre_str = "\033[0;31mFAILED"
+        pre_str = "\n\033[0;31mFAILED"
 
     post_str = f" (ran {cmds_ran}/{len(commands)})\033[0m"
 
@@ -135,39 +137,57 @@ def parse_input_file(input_file):
     in_py_block = False
     py_block = ""
     py_block_indent = -1
+    in_sh_block = False
+    sh_block = ""
     with open(input_file, 'r') as file:
         for line in file:
             line = line.rstrip()
             if line.startswith("#") or line.strip() == "":
                 continue
-            if line == "py":
-                if not in_py_block:
-                    in_py_block = True
-                    py_block = ""
-                    py_block_indent = -1
-                else:
-                    in_py_block = False
-                    commands.append({"type": "python", "content": py_block})
+
+            if line == "(py" and not in_py_block:
+                in_py_block = True
+                py_block = ""
+                py_block_indent = -1
+            elif line == "py)" and in_py_block:
+                in_py_block = False
+                commands.append({"type": "python", "content": py_block})
+            elif line == "(sh" and not in_sh_block:
+                in_sh_block = True
+                sh_block = ""
+            elif line == "sh)" and in_sh_block:
+                in_sh_block = False
+                commands.append({"type": "shellscript", "content": sh_block})
             else:
                 if in_py_block:
                     if py_block_indent < 0:
                         trimmed = line.lstrip()
                         py_block_indent = len(line) - len(trimmed)
                     py_block += line[py_block_indent:] + "\n"
+                elif in_sh_block:
+                    sh_block += line + "\n"
                 else:
                     commands.append({"type": "command", "content": line})
 
     cur_hash = ""
+    py_index = 0
+    sh_index = 0
     for command in commands:
-        hash_object = hashlib.sha1((cur_hash + command["content"]).encode("utf8"))
-        cur_hash = hash_object.hexdigest()
+        cur_hash = sha1(cur_hash + command["content"])
         command["hash"] = cur_hash
 
         if command["type"] == "python":
-            py_file_name = get_tmp_python_file(command)
+            py_file_name = get_tmp_python_file(py_index)
+            py_index += 1
             with open(py_file_name, 'w') as py_file:
                 py_file.write(PYTHON_HELPER_FUNCS + command["content"])
             command["content"] = f"python {py_file_name}"
+        elif command["type"] == "shellscript":
+            sh_file_name = get_tmp_shell_file(sh_index)
+            sh_index += 1
+            with open(sh_file_name, 'w') as sh_file:
+                sh_file.write(command["content"])
+            command["content"] = f"bash {sh_file_name}"
 
     return commands
 
@@ -180,8 +200,12 @@ def get_col_output_file(command):
     return os.path.join(SPOOL_DIR, f"{command['hash']}.col")
 
 
-def get_tmp_python_file(command):
-    return os.path.join(SPOOL_DIR, f"{command['hash']}.py")
+def get_tmp_python_file(index):
+    return os.path.join(SPOOL_DIR, f"{index}.py")
+
+
+def get_tmp_shell_file(index):
+    return os.path.join(SPOOL_DIR, f"{index}.sh")
 
 
 def clear_terminal():
@@ -190,6 +214,10 @@ def clear_terminal():
 
 def strip_shell_control_chars(str_bytes):
     return re.sub(r"\x1b\[[0-9;]*m", '', str_bytes.decode("utf8")).encode("utf8")
+
+
+def sha1(content):
+    return hashlib.sha1(content.encode("utf8")).hexdigest()
 
 
 class Handler(FileSystemEventHandler):
