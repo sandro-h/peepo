@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""peepo.
+
+Usage:
+  peepo <file> [--once] [--spool=<spool_dir>]
+  peepo (-h | --help)
+
+Options:
+  -h --help             Show this screen.
+  --once                Run only once instead of watching for file changes.
+  --spool=<spool_dir>   Spool directory for caching (default: <script dir>/spool)
+
+"""
 import os
 from pathlib import Path
 import sys
@@ -7,6 +19,7 @@ import pty
 import hashlib
 import re
 import time
+from docopt import docopt
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -31,7 +44,11 @@ def from_lines():
 """
 
 
-def main():
+def main(args):
+
+    if args["--spool"] is not None:
+        global SPOOL_DIR  # pylint: disable=global-statement
+        SPOOL_DIR = args["--spool"]
 
     os.makedirs(SPOOL_DIR, exist_ok=True)
     tidy_spool()
@@ -40,8 +57,7 @@ def main():
 
     parse_and_run(input_file)
 
-    only_once = len(sys.argv) > 2 and sys.argv[2] == "--once"
-    if not only_once:
+    if not args["--once"]:
         event_handler = Handler(lambda f: on_input_file_modified(f, input_file))
         observer = Observer()
         observer.schedule(event_handler, '.', recursive=False)
@@ -169,6 +185,10 @@ def parse_input_file(input_file):
                 else:
                     commands.append({"type": "command", "content": line})
 
+    return pre_process_commands(commands)
+
+
+def pre_process_commands(commands):
     cur_hash = ""
     py_index = 0
     sh_index = 0
@@ -234,4 +254,5 @@ class Handler(FileSystemEventHandler):
 
 if __name__ == "__main__":
     # execute only if run as a script
-    main()
+    arguments = docopt(__doc__, version='peepo')
+    main(arguments)

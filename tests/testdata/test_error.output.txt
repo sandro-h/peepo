@@ -1,0 +1,2 @@
+cat: nonexistentfile: No such file or directory
+Command 1 failed with return code 1
