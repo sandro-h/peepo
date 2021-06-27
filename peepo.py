@@ -17,11 +17,12 @@ import subprocess
 import pty
 import hashlib
 import re
-import time
+import sys
 from docopt import docopt
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+SCREEN = None
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
 MAX_SPOOL_FILES = 200
@@ -62,10 +63,41 @@ def main(args):
 
     input_file = args["<file>"]
 
-    parse_and_run(input_file)
+    state = {"up_to_offset": 0, "commands": parse_input_file(input_file)}
+    run_and_show_result(state["commands"])
+
+    def on_input_file_changed():
+        state["commands"] = parse_input_file(input_file)
+        state["up_to_offset"] = 0
+        run_and_show_result(state["commands"])
 
     if not args["--once"]:
-        watch_file(input_file, parse_and_run)
+        stop = watch_file(input_file, on_input_file_changed)
+        listen_for_keys(state)
+        stop()
+
+
+def listen_for_keys(state):
+    os.system("stty raw -echo")
+    try:
+        while True:
+            ctrl_char = ord(sys.stdin.read(1))
+            if ctrl_char == 27:
+                rest = sys.stdin.read(2)
+
+                if rest == "[A":  # up
+                    if state["up_to_offset"] < len(state["commands"]) - 1:
+                        state["up_to_offset"] += 1
+                        run_and_show_result(state["commands"], state["up_to_offset"])
+                elif rest == "[B":  # down
+                    if state["up_to_offset"] > 0:
+                        state["up_to_offset"] -= 1
+                        run_and_show_result(state["commands"], state["up_to_offset"])
+
+            elif ctrl_char in [3, 4, 113]:  # ctrl+c, ctrl+d, q
+                break
+    finally:
+        os.system("stty -raw echo")
 
 
 def tidy_spool():
@@ -74,16 +106,20 @@ def tidy_spool():
         os.remove(path)
 
 
-def parse_and_run(input_file):
-    commands = parse_input_file(input_file)
-    success, cmds_ran = run(commands)
+def run_and_show_result(commands, up_to_offset=0):
+    up_to = max(0, len(commands) - up_to_offset)
+    success, cmds_ran = run(commands, up_to)
 
+    # We need to use \r to move cursor to left in terminal raw mode.
+    # Cf. https://stackoverflow.com/questions/49124608/how-to-align-the-cursor-to-the-left-side-after-using-printf-c-linux
     if success:
-        pre_str = "\n\033[0;32mOK"
+        pre_str = "\r\n\033[0;32mOK"
     else:
-        pre_str = "\n\033[0;31mFAILED"
+        pre_str = "\r\n\033[0;31mFAILED"
 
-    post_str = f" (ran {cmds_ran}/{len(commands)})\033[0m"
+    post_str = f" (ran {cmds_ran}/{up_to})\033[0m"
+    if up_to < len(commands):
+        post_str += f" [showing command result {up_to}/{len(commands)}]"
 
     print(pre_str + post_str, end='', flush=True)
 
@@ -144,12 +180,12 @@ def process_commands(commands):
     return commands
 
 
-def run(commands):
+def run(commands, up_to):
     clear_terminal()
 
     cmds_ran = 0
-    for k, command in enumerate(commands):
-        last = k == len(commands) - 1
+    for k, command in enumerate(commands[:up_to]):
+        last = k == up_to - 1
         stdin_file_path = get_output_file(commands[k - 1]) if k > 0 else None
         stdout_file_path = get_col_output_file(command) if last else get_output_file(command)
 
@@ -203,7 +239,7 @@ def get_col_output_file(command):
 
 
 def clear_terminal():
-    print(chr(27) + "[2J")
+    print(chr(27) + "[2J\r")
 
 
 def strip_shell_control_chars(str_bytes):
@@ -217,19 +253,13 @@ def sha1(content):
 def watch_file(input_file, on_modified):
     def internal_on_modified(modified_file):
         if os.path.basename(modified_file) == input_file:
-            on_modified(input_file)
+            on_modified()
 
     event_handler = Handler(internal_on_modified)
     observer = Observer()
     observer.schedule(event_handler, '.', recursive=False)
     observer.start()
-    try:
-        while True:
-            time.sleep(5)
-    except:  # pylint: disable=bare-except
-        observer.stop()
-
-    observer.join()
+    return observer.stop
 
 
 class Handler(FileSystemEventHandler):
