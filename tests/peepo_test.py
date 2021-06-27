@@ -45,6 +45,14 @@ def test_run_python_block():
     assert stdout == load_file(f"{TEST_DIR}/testdata/test_python.output.txt") + "\nOK (ran 3/3)"
 
 
+def test_run_only_one_command():
+    delete_spool()
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_only_one_cmd.input.sh")
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == load_file(f"{TEST_DIR}/testdata/test_only_one_cmd.output.txt") + "\nOK (ran 1/1)"
+
+
 def test_run_error():
     delete_spool()
     returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_error.input.sh")
