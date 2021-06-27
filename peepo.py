@@ -2,13 +2,14 @@
 """peepo.
 
 Usage:
-  peepo <file> [--once] [--spool=<spool_dir>]
+  peepo <file> [--spool=<spool_dir>] [--once] [--cols=<cols>]
   peepo (-h | --help)
 
 Options:
   -h --help             Show this screen.
-  --once                Run only once instead of watching for file changes.
   --spool=<spool_dir>   Spool directory for caching (default: <script dir>/spool)
+  --once                Run only once instead of watching for file changes.
+  --cols=<cols>         Overwrite number of columns in terminal (default: read via 'stty size')
 
 """
 import os
@@ -22,7 +23,7 @@ from docopt import docopt
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-SCREEN = None
+COLUMNS = 60
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
 MAX_SPOOL_FILES = 200
@@ -60,6 +61,13 @@ def main(args):
 
     os.makedirs(SPOOL_DIR, exist_ok=True)
     tidy_spool()
+
+    global COLUMNS  # pylint: disable=global-statement
+    if args["--cols"] is None:
+        _, cols = os.popen('stty size', 'r').read().split()
+        COLUMNS = int(cols)
+    else:
+        COLUMNS = int(args["--cols"])
 
     input_file = args["<file>"]
 
@@ -106,24 +114,6 @@ def tidy_spool():
         os.remove(path)
 
 
-def run_and_show_result(commands, up_to_offset=0):
-    up_to = max(0, len(commands) - up_to_offset)
-    success, cmds_ran = run(commands, up_to)
-
-    # We need to use \r to move cursor to left in terminal raw mode.
-    # Cf. https://stackoverflow.com/questions/49124608/how-to-align-the-cursor-to-the-left-side-after-using-printf-c-linux
-    if success:
-        pre_str = "\r\n\033[0;32mOK"
-    else:
-        pre_str = "\r\n\033[0;31mFAILED"
-
-    post_str = f" (ran {cmds_ran}/{up_to})\033[0m"
-    if up_to < len(commands):
-        post_str += f" [showing command result {up_to}/{len(commands)}]"
-
-    print(pre_str + post_str, end='', flush=True)
-
-
 def parse_input_file(input_file):
     commands = []
     block_content = ""
@@ -166,6 +156,7 @@ def process_commands(commands):
     for command in commands:
         cur_hash = sha1(cur_hash + command["content"])
         command["hash"] = cur_hash
+        command["preview"] = re.sub(r"\s+", " ", command["content"])
 
         marker = command["type"]
         block_def = BLOCK_DEFS.get(marker)
@@ -178,6 +169,25 @@ def process_commands(commands):
             command["content"] = block_def["make_command"](spool_file_name)
 
     return commands
+
+
+def run_and_show_result(commands, up_to_offset=0):
+    up_to = max(0, len(commands) - up_to_offset)
+    success, cmds_ran, last_cmd_index = run(commands, up_to)
+
+    status = "OK" if success else "FAILED"
+    status += f" (ran {cmds_ran}/{up_to})\033[0m"
+    status += f" cmd {last_cmd_index + 1}/{len(commands)}: {commands[last_cmd_index]['preview']}"
+    status = ellipsis(status, COLUMNS)
+
+    # We need to use \r to move cursor to left in terminal raw mode.
+    # Cf. https://stackoverflow.com/questions/49124608/how-to-align-the-cursor-to-the-left-side-after-using-printf-c-linux
+    if success:
+        status = "\r\n\033[0;32m" + status
+    else:
+        status = "\r\n\033[0;31m" + status
+
+    print(status, end='', flush=True)
 
 
 def run(commands, up_to):
@@ -205,9 +215,9 @@ def run(commands, up_to):
         if return_code != 0:
             os.remove(stdout_file_path)
             print(f"Command {k+1} failed with return code {return_code}")
-            return False, cmds_ran
+            return False, cmds_ran, k
 
-    return True, cmds_ran
+    return True, cmds_ran, up_to - 1
 
 
 def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):
@@ -248,6 +258,12 @@ def strip_shell_control_chars(str_bytes):
 
 def sha1(content):
     return hashlib.sha1(content.encode("utf8")).hexdigest()
+
+
+def ellipsis(content, max_len):
+    if len(content) <= max_len:
+        return content
+    return content[:max_len - 3] + "..."
 
 
 def watch_file(input_file, on_modified):
