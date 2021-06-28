@@ -215,12 +215,20 @@ def run(commands, up_to):
         with open(stdout_file_path, 'wb') as stdout_file:
             return_code = exec_command_in_shell(command["content"], stdin_file_path, stdout_file, use_color=last)
 
-        if return_code != 0:
+        acceptable_return_codes = [0]
+        if is_grep_command(command["content"]):
+            acceptable_return_codes = [0, 1]
+
+        if return_code not in acceptable_return_codes:
             os.remove(stdout_file_path)
             print(f"Command {k+1} failed with return code {return_code}")
             return False, cmds_ran, k
 
     return True, cmds_ran, up_to - 1
+
+
+def is_grep_command(cmd_content):
+    return re.search(r"^\s*e?grep", cmd_content)
 
 
 def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):

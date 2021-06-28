@@ -33,7 +33,7 @@ def test_run_one_new_command_at_end():
     returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test2.input.sh")
     assert returncode == 0
     assert stderr == ""
-    # runs 2 because the previously last command is re-execueted without colors
+    # runs 2 because the previously last command is re-executed without colors
     assert stdout == load_file(f"{TEST_DIR}/testdata/test2.output.txt") + "\n\nOK (ran 2/5) cmd 5/5: wc -c"
 
 
@@ -61,6 +61,14 @@ def test_run_error():
     assert returncode == 0
     assert stderr + stdout == load_file(
         f"{TEST_DIR}/testdata/test_error.output.txt") + "\nFAILED (ran 1/3) cmd 1/3: cat nonexistentfile"
+
+
+def test_run_no_grep_error():
+    delete_spool()
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_no_grep_error.input.sh")
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == "OK (ran 5/5) cmd 5/5: tr ',' '\\n'"
 
 
 def run_peepo(input_file, assert_success=True):
