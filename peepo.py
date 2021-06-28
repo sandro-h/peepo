@@ -69,7 +69,7 @@ def main(args):
     else:
         COLUMNS = int(args["--cols"])
 
-    input_file = args["<file>"]
+    input_file = os.path.abspath(args["<file>"])
 
     state = {"up_to_offset": 0, "commands": parse_input_file(input_file)}
     run_and_show_result(state["commands"])
@@ -173,6 +173,7 @@ def process_commands(commands):
 
 def run_and_show_result(commands, up_to_offset=0):
     if not commands:
+        print("Waiting for first command...")
         return
 
     up_to = max(0, len(commands) - up_to_offset)
@@ -279,12 +280,13 @@ def ellipsis(content, max_len):
 
 def watch_file(input_file, on_modified):
     def internal_on_modified(modified_file):
-        if os.path.basename(modified_file) == input_file:
+        if modified_file == input_file:
             on_modified()
 
     event_handler = Handler(internal_on_modified)
     observer = Observer()
-    observer.schedule(event_handler, '.', recursive=False)
+
+    observer.schedule(event_handler, Path(input_file).parent.absolute(), recursive=False)
     observer.start()
     return observer.stop
 
