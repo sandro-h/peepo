@@ -172,6 +172,9 @@ def process_commands(commands):
 
 
 def run_and_show_result(commands, up_to_offset=0):
+    if not commands:
+        return
+
     up_to = max(0, len(commands) - up_to_offset)
     success, cmds_ran, last_cmd_index = run(commands, up_to)
 
