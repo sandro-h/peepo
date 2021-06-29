@@ -243,13 +243,21 @@ def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):
         if stdin_file_path:
             cmd = f"cat {stdin_file_path} | {cmd}"
 
-        return pty.spawn(['bash', '-c', cmd], read)
+        return pty.spawn(build_bash_cmd(cmd), read)
 
     stdin_file = open(stdin_file_path, 'rb') if stdin_file_path is not None else None
-    result = subprocess.run(['bash', '-c', cmd], stdout=stdout_file, stdin=stdin_file, check=False)
+    result = subprocess.run(build_bash_cmd(cmd), stdout=stdout_file, stdin=stdin_file, check=False)
     if stdin_file is not None:
         stdin_file.close()
     return result.returncode
+
+
+def build_bash_cmd(cmd):
+    load_bashrc = f'[ -f "{SCRIPT_DIR}/peepo.bashrc" ] && . {SCRIPT_DIR}/peepo.bashrc'
+    # The \n is important for aliases to be loaded. From bash manual:
+    #   The rules concerning the definition and use of aliases are somewhat confusing.
+    #   Bash always reads at least one complete line of input before executing any of the commands on that line.
+    return ['bash', '-O', 'expand_aliases', '-c', f"{load_bashrc}\n{cmd}"]
 
 
 def get_output_file(command):

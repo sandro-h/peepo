@@ -5,7 +5,7 @@
 
 ![](widepeepohappy.png)
 
-Useful bashrc aliases:
+Useful functions to start peepo:
 
 ```shell
 # Create temporary input_file, open in editor, start peepo
