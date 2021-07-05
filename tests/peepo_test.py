@@ -5,13 +5,48 @@ import shutil
 
 TEST_DIR = os.path.dirname(os.path.realpath(__file__))
 
+CASES = [{
+    "input": f"{TEST_DIR}/testdata/test1.input.sh",
+    "output": f"{TEST_DIR}/testdata/test1.output.txt",
+    "status": "\n\nOK (ran 4/4) cmd 4/4: tr '\\n' ','"
+}, {
+    "input": f"{TEST_DIR}/testdata/test2.input.sh",
+    "output": f"{TEST_DIR}/testdata/test2.output.txt",
+    "status": "\n\nOK (ran 5/5) cmd 5/5: wc -c"
+}, {
+    "input": f"{TEST_DIR}/testdata/test_python.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_python.output.txt",
+    "status": "\n\nOK (ran 3/3) cmd 3/3: data = from_json() print(\"$oi: ..."
+}, {
+    "input": f"{TEST_DIR}/testdata/test_shell.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_shell.output.txt",
+    "status": "\n\nOK (ran 3/3) cmd 3/3: grep first_name | wc -l"
+}, {
+    "input": f"{TEST_DIR}/testdata/test_only_one_cmd.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_only_one_cmd.output.txt",
+    "status": "\n\nOK (ran 1/1) cmd 1/1: cat tests/testdata/users.json"
+}, {
+    "input": f"{TEST_DIR}/testdata/test_no_grep_error.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_no_grep_error.output.txt",
+    "status": "OK (ran 5/5) cmd 5/5: tr ',' '\\n'"
+}, {
+    "input": f"{TEST_DIR}/testdata/test_mixed_blocks.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_mixed_blocks.output.txt",
+    "status": "\n\nOK (ran 4/4) cmd 4/4: lines = from_lines() print([f\"o..."
+}]
+
 
 def test_run_empty_spool():
     delete_spool()
-    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test1.input.sh")
-    assert returncode == 0
-    assert stderr == ""
-    assert stdout == load_file(f"{TEST_DIR}/testdata/test1.output.txt") + "\nOK (ran 4/4) cmd 4/4: tr '\\n' ','"
+
+    for case in CASES:
+        delete_spool()
+        print(f"Testcase {case['input']}")
+
+        returncode, stdout, stderr = run_peepo(case["input"])
+        assert returncode == 0
+        assert stderr == ""
+        assert stdout == load_file(case["output"]) + case["status"]
 
 
 def test_run_all_cached():
@@ -22,7 +57,7 @@ def test_run_all_cached():
     returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test1.input.sh")
     assert returncode == 0
     assert stderr == ""
-    assert stdout == load_file(f"{TEST_DIR}/testdata/test1.output.txt") + "\nOK (ran 0/4) cmd 4/4: tr '\\n' ','"
+    assert stdout == load_file(f"{TEST_DIR}/testdata/test1.output.txt") + "\n\nOK (ran 0/4) cmd 4/4: tr '\\n' ','"
 
 
 def test_run_one_new_command_at_end():
@@ -37,24 +72,6 @@ def test_run_one_new_command_at_end():
     assert stdout == load_file(f"{TEST_DIR}/testdata/test2.output.txt") + "\n\nOK (ran 2/5) cmd 5/5: wc -c"
 
 
-def test_run_python_block():
-    delete_spool()
-    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_python.input.sh")
-    assert returncode == 0
-    assert stderr == ""
-    assert stdout == load_file(
-        f"{TEST_DIR}/testdata/test_python.output.txt") + "\nOK (ran 3/3) cmd 3/3: data = from_json() print(data['..."
-
-
-def test_run_only_one_command():
-    delete_spool()
-    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_only_one_cmd.input.sh")
-    assert returncode == 0
-    assert stderr == ""
-    assert stdout == load_file(
-        f"{TEST_DIR}/testdata/test_only_one_cmd.output.txt") + "\nOK (ran 1/1) cmd 1/1: cat tests/testdata/users.json"
-
-
 def test_run_error():
     delete_spool()
     returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_error.input.sh")
@@ -63,19 +80,33 @@ def test_run_error():
         f"{TEST_DIR}/testdata/test_error.output.txt") + "\nFAILED (ran 1/3) cmd 1/3: cat nonexistentfile"
 
 
-def test_run_no_grep_error():
+def test_convert_script():
+    convert_file = f"{TEST_DIR}/spool/convert_output.sh"
     delete_spool()
-    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_no_grep_error.input.sh")
-    assert returncode == 0
-    assert stderr == ""
-    assert stdout == "OK (ran 5/5) cmd 5/5: tr ',' '\\n'"
+    os.makedirs(f"{TEST_DIR}/spool", exist_ok=True)
+
+    for case in CASES:
+        print(f"Testcase {case['input']}")
+
+        returncode, *_ = run_peepo_convert(case["input"], convert_file)
+        assert returncode == 0
+
+        returncode, stdout, stderr = run_with_bash(f"chmod +x {convert_file} && {convert_file}")
+        assert returncode == 0
+        assert stderr == ""
+        assert stdout == load_file(case["output"])
 
 
 def run_peepo(input_file, assert_success=True):
-    result = subprocess.run(['bash', '-c', f"./peepo.py {input_file} --spool={TEST_DIR}/spool --once --cols=60"],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            check=False)
+    return run_with_bash(f"./peepo.py {input_file} --spool={TEST_DIR}/spool --once --cols=60", assert_success)
+
+
+def run_peepo_convert(input_file, output_script, assert_success=True):
+    return run_with_bash(f"./peepo.py {input_file} --spool={TEST_DIR}/spool --script > {output_script}", assert_success)
+
+
+def run_with_bash(cmd, assert_success=True):
+    result = subprocess.run(['bash', '-c'] + [cmd], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     stdout = strip_shell_control_chars(result.stdout).lstrip()
     stderr = strip_shell_control_chars(result.stderr).lstrip()
     if assert_success:

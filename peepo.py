@@ -2,14 +2,15 @@
 """peepo.
 
 Usage:
-  peepo <file> [--spool=<spool_dir>] [--once] [--cols=<cols>]
+  peepo <file> [--spool=<spool_dir>] [--once] [--cols=<cols>] [--script]
   peepo (-h | --help)
 
 Options:
   -h --help             Show this screen.
-  --spool=<spool_dir>   Spool directory for caching (default: <script dir>/spool)
-  --once                Run only once instead of watching for file changes.
-  --cols=<cols>         Overwrite number of columns in terminal (default: read via 'stty size')
+  -s --spool=<spool_dir>   Spool directory for caching (default: <script dir>/spool)
+  -o --once                Run only once instead of watching for file changes.
+  -c --cols=<cols>         Overwrite number of columns in terminal (default: read via 'stty size')
+  -sc --script             Convert peepo file to a standalone shell script and write it to stdout.
 
 """
 import os
@@ -26,6 +27,7 @@ from watchdog.events import FileSystemEventHandler
 COLUMNS = 60
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
+LOAD_BASHRC_CMD = f'[ -f "{SCRIPT_DIR}/peepo.bashrc" ] && . {SCRIPT_DIR}/peepo.bashrc'
 MAX_SPOOL_FILES = 200
 BLOCK_DEFS = {
     "py": {
@@ -54,12 +56,20 @@ def from_lines():
 
 
 def main(args):
-
     if args["--spool"] is not None:
         global SPOOL_DIR  # pylint: disable=global-statement
         SPOOL_DIR = args["--spool"]
 
     os.makedirs(SPOOL_DIR, exist_ok=True)
+
+    if args["--script"]:
+        convert_peepo_script(args)
+    else:
+        run_peepo_script(args)
+
+
+def run_peepo_script(args):
+
     tidy_spool()
 
     global COLUMNS  # pylint: disable=global-statement
@@ -72,6 +82,7 @@ def main(args):
     input_file = os.path.abspath(args["<file>"])
 
     state = {"up_to_offset": 0, "commands": parse_input_file(input_file)}
+
     run_and_show_result(state["commands"])
 
     def on_input_file_changed():
@@ -156,7 +167,7 @@ def process_commands(commands):
     for command in commands:
         cur_hash = sha1(cur_hash + command["content"])
         command["hash"] = cur_hash
-        command["preview"] = re.sub(r"\s+", " ", command["content"])
+        command["preview"] = re.sub(r"\s+", " ", command["content"].strip())
 
         marker = command["type"]
         block_def = BLOCK_DEFS.get(marker)
@@ -164,8 +175,9 @@ def process_commands(commands):
             index = block_index.get(marker, 0)
             block_index[marker] = index + 1
             spool_file_name = os.path.join(SPOOL_DIR, f"{index}.{marker}")
+            command["script_content"] = block_def["helper_functions"] + command["content"]
             with open(spool_file_name, 'w') as spool_file:
-                spool_file.write(block_def["helper_functions"] + command["content"])
+                spool_file.write(command["script_content"])
             command["content"] = block_def["make_command"](spool_file_name)
 
     return commands
@@ -253,11 +265,43 @@ def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):
 
 
 def build_bash_cmd(cmd):
-    load_bashrc = f'[ -f "{SCRIPT_DIR}/peepo.bashrc" ] && . {SCRIPT_DIR}/peepo.bashrc'
     # The \n is important for aliases to be loaded. From bash manual:
     #   The rules concerning the definition and use of aliases are somewhat confusing.
     #   Bash always reads at least one complete line of input before executing any of the commands on that line.
-    return ['bash', '-O', 'expand_aliases', '-c', f"{load_bashrc}\n{cmd}"]
+    return ['bash', '-O', 'expand_aliases', '-c', f"{LOAD_BASHRC_CMD}\n{cmd}"]
+
+
+def convert_peepo_script(args):
+    input_file = os.path.abspath(args["<file>"])
+
+    commands = parse_input_file(input_file)
+
+    script = """
+#!/usr/bin/env bash
+set -euo pipefail
+"""
+    script += LOAD_BASHRC_CMD + "\n\n"
+    for i, command in enumerate(commands):
+        script += convert_to_shell_lines(command)
+        if i < len(commands) - 1:
+            script += " |\n"
+
+    print(script)
+
+
+def convert_to_shell_lines(command):
+    if command["type"] == "sh":
+        indent_script = command['script_content'].strip().replace("\n", "\n\t")
+        return f"(\n\t{indent_script}\n)"
+
+    if command["type"] == "py":
+        indent_script = command['script_content'].strip().replace("\n", "\n\t").replace("$", "\\$")
+        return f"python <(cat <<-EOF\n\t{indent_script}\nEOF\n)"
+
+    if is_grep_command(command["content"]):
+        return command["content"] + " || true"
+
+    return command["content"]
 
 
 def get_output_file(command):
