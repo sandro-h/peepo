@@ -2,13 +2,15 @@
 """peepo.
 
 Usage:
-  peepo <file> [--spool=<spool_dir>] [--once] [--cols=<cols>] [--script]
+  peepo <file> [--spool=<spool_dir>] [--once] [--force] [--cols=<cols>] [--script]
   peepo (-h | --help)
 
 Options:
   -h --help             Show this screen.
   -s --spool=<spool_dir>   Spool directory for caching (default: <script dir>/spool)
   -o --once                Run only once instead of watching for file changes.
+  -f --force               Don't use cached outputs but rerun all commands instead.
+                           Only when peepo runs first time. On file changes or up/down caching will be used.
   -c --cols=<cols>         Overwrite number of columns in terminal (default: read via 'stty size')
   -sc --script             Convert peepo file to a standalone shell script and write it to stdout.
 
@@ -83,7 +85,7 @@ def run_peepo_script(args):
 
     state = {"up_to_offset": 0, "commands": parse_input_file(input_file)}
 
-    run_and_show_result(state["commands"])
+    run_and_show_result(state["commands"], force=args["--force"])
 
     def on_input_file_changed():
         state["commands"] = parse_input_file(input_file)
@@ -112,6 +114,9 @@ def listen_for_keys(state):
                     if state["up_to_offset"] > 0:
                         state["up_to_offset"] -= 1
                         run_and_show_result(state["commands"], state["up_to_offset"])
+
+            elif ctrl_char == 114:  # r
+                run_and_show_result(state["commands"], state["up_to_offset"], force=True)
 
             elif ctrl_char in [3, 4, 113]:  # ctrl+c, ctrl+d, q
                 break
@@ -183,13 +188,13 @@ def process_commands(commands):
     return commands
 
 
-def run_and_show_result(commands, up_to_offset=0):
+def run_and_show_result(commands, up_to_offset=0, force=False):
     if not commands:
         print("Waiting for first command...")
         return
 
     up_to = max(0, len(commands) - up_to_offset)
-    success, cmds_ran, last_cmd_index = run(commands, up_to)
+    success, cmds_ran, last_cmd_index = run(commands, up_to, force)
 
     status = "OK" if success else "FAILED"
     status += f" (ran {cmds_ran}/{up_to})\033[0m"
@@ -206,7 +211,7 @@ def run_and_show_result(commands, up_to_offset=0):
     print(status, end='', flush=True)
 
 
-def run(commands, up_to):
+def run(commands, up_to, force):
     clear_terminal()
 
     cmds_ran = 0
@@ -216,7 +221,8 @@ def run(commands, up_to):
         stdout_file_path = get_col_output_file(command) if last else get_output_file(command)
 
         # Command executed previously, use cached output:
-        if Path(stdout_file_path).is_file():
+        if not force and Path(stdout_file_path).is_file():
+            # Touch cached file so housekeeping knows it was used recently:
             Path(stdout_file_path).touch()
             if last:
                 with open(stdout_file_path, 'rb') as file:

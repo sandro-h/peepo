@@ -5,10 +5,26 @@
 
 ![](widepeepohappy.png)
 
-Useful functions to start peepo:
+## Usage
+
+Command line options, see
 
 ```shell
-# Create temporary input_file, open in editor, start peepo
+./peepo --help
+```
+
+Command keys:
+
+| Key | Function |
+|-----|-----|
+| `<up arrow key>` | Go to previous command in input file |
+| `<down arrow key>` | Go to next command in input file |
+| `r` | Rerun all commands without using cached output |
+
+Useful bash function to start peepo inside VSCode's integrated terminal:
+
+```shell
+# Create temporary input_file, open it in VSCode, start peepo
 function tpeepo() {
     tmp_file=$(mktemp /tmp/peepoXXXXX.sh)
     code "$tmp_file"

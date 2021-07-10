@@ -2,8 +2,10 @@ import subprocess
 import os
 import re
 import shutil
+from os.path import isfile, join
 
 TEST_DIR = os.path.dirname(os.path.realpath(__file__))
+SPOOL_DIR = join(TEST_DIR, "spool")
 
 CASES = [{
     "input": f"{TEST_DIR}/testdata/test1.input.sh",
@@ -72,6 +74,17 @@ def test_run_one_new_command_at_end():
     assert stdout == load_file(f"{TEST_DIR}/testdata/test2.output.txt") + "\n\nOK (ran 2/5) cmd 5/5: wc -c"
 
 
+def test_run_force():
+    delete_spool()
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test1.input.sh")
+
+    # Second run, would be cached but we force it
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test1.input.sh", extra_args="--force")
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == load_file(f"{TEST_DIR}/testdata/test1.output.txt") + "\n\nOK (ran 4/4) cmd 4/4: tr '\\n' ','"
+
+
 def test_run_error():
     delete_spool()
     returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_error.input.sh")
@@ -81,9 +94,9 @@ def test_run_error():
 
 
 def test_convert_script():
-    convert_file = f"{TEST_DIR}/spool/convert_output.sh"
+    convert_file = f"{SPOOL_DIR}/convert_output.sh"
     delete_spool()
-    os.makedirs(f"{TEST_DIR}/spool", exist_ok=True)
+    os.makedirs(SPOOL_DIR, exist_ok=True)
 
     for case in CASES:
         print(f"Testcase {case['input']}")
@@ -97,12 +110,12 @@ def test_convert_script():
         assert stdout == load_file(case["output"])
 
 
-def run_peepo(input_file, assert_success=True):
-    return run_with_bash(f"./peepo.py {input_file} --spool={TEST_DIR}/spool --once --cols=60", assert_success)
+def run_peepo(input_file, assert_success=True, extra_args=""):
+    return run_with_bash(f"./peepo.py {input_file} --spool={SPOOL_DIR} --once --cols=60 {extra_args}", assert_success)
 
 
 def run_peepo_convert(input_file, output_script, assert_success=True):
-    return run_with_bash(f"./peepo.py {input_file} --spool={TEST_DIR}/spool --script > {output_script}", assert_success)
+    return run_with_bash(f"./peepo.py {input_file} --spool={SPOOL_DIR} --script > {output_script}", assert_success)
 
 
 def run_with_bash(cmd, assert_success=True):
@@ -124,4 +137,4 @@ def load_file(file_path):
 
 
 def delete_spool():
-    shutil.rmtree(f"{TEST_DIR}/spool", ignore_errors=True)
+    shutil.rmtree(f"{SPOOL_DIR}", ignore_errors=True)
