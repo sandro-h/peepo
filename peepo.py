@@ -2,11 +2,11 @@
 """peepo.
 
 Usage:
-  peepo <file> [--spool=<spool_dir>] [--once] [--force] [--cols=<cols>] [--script]
+  peepo <command_file> [--spool=<spool_dir>] [--once] [--force] [--cols=<cols>] [--script]
   peepo (-h | --help)
 
 Options:
-  -h --help             Show this screen.
+  -h --help                Show this screen.
   -s --spool=<spool_dir>   Spool directory for caching (default: <script dir>/spool)
   -o --once                Run only once instead of watching for file changes.
   -f --force               Don't use cached outputs but rerun all commands instead.
@@ -81,19 +81,19 @@ def run_peepo_script(args):
     else:
         COLUMNS = int(args["--cols"])
 
-    input_file = os.path.abspath(args["<file>"])
+    command_file = os.path.abspath(args["<command_file>"])
 
-    state = {"up_to_offset": 0, "commands": parse_input_file(input_file)}
+    state = {"up_to_offset": 0, "commands": parse_command_file(command_file)}
 
     run_and_show_result(state["commands"], force=args["--force"])
 
-    def on_input_file_changed():
-        state["commands"] = parse_input_file(input_file)
+    def on_command_file_changed():
+        state["commands"] = parse_command_file(command_file)
         state["up_to_offset"] = 0
         run_and_show_result(state["commands"])
 
     if not args["--once"]:
-        stop = watch_file(input_file, on_input_file_changed)
+        stop = watch_file(command_file, on_command_file_changed)
         listen_for_keys(state)
         stop()
 
@@ -130,13 +130,13 @@ def tidy_spool():
         os.remove(path)
 
 
-def parse_input_file(input_file):
+def parse_command_file(command_file):
     commands = []
     block_content = ""
     block_indent = -1
     in_block = False
 
-    with open(input_file, 'r') as file:
+    with open(command_file, 'r') as file:
         for line in file:
             line = line.rstrip()
             if line.startswith("#") or line.strip() == "":
@@ -278,9 +278,9 @@ def build_bash_cmd(cmd):
 
 
 def convert_peepo_script(args):
-    input_file = os.path.abspath(args["<file>"])
+    command_file = os.path.abspath(args["<command_file>"])
 
-    commands = parse_input_file(input_file)
+    commands = parse_command_file(command_file)
 
     script = """
 #!/usr/bin/env bash
@@ -336,15 +336,15 @@ def ellipsis(content, max_len):
     return content[:max_len - 3] + "..."
 
 
-def watch_file(input_file, on_modified):
+def watch_file(command_file, on_modified):
     def internal_on_modified(modified_file):
-        if modified_file == input_file:
+        if modified_file == command_file:
             on_modified()
 
     event_handler = Handler(internal_on_modified)
     observer = Observer()
 
-    observer.schedule(event_handler, Path(input_file).parent.absolute(), recursive=False)
+    observer.schedule(event_handler, Path(command_file).parent.absolute(), recursive=False)
     observer.start()
     return observer.stop
 

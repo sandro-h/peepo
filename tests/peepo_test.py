@@ -2,10 +2,9 @@ import subprocess
 import os
 import re
 import shutil
-from os.path import isfile, join
 
 TEST_DIR = os.path.dirname(os.path.realpath(__file__))
-SPOOL_DIR = join(TEST_DIR, "spool")
+SPOOL_DIR = os.path.join(TEST_DIR, "spool")
 
 CASES = [{
     "input": f"{TEST_DIR}/testdata/test1.input.sh",
@@ -110,12 +109,12 @@ def test_convert_script():
         assert stdout == load_file(case["output"])
 
 
-def run_peepo(input_file, assert_success=True, extra_args=""):
-    return run_with_bash(f"./peepo.py {input_file} --spool={SPOOL_DIR} --once --cols=60 {extra_args}", assert_success)
+def run_peepo(command_file, assert_success=True, extra_args=""):
+    return run_with_bash(f"./peepo.py {command_file} --spool={SPOOL_DIR} --once --cols=60 {extra_args}", assert_success)
 
 
-def run_peepo_convert(input_file, output_script, assert_success=True):
-    return run_with_bash(f"./peepo.py {input_file} --spool={SPOOL_DIR} --script > {output_script}", assert_success)
+def run_peepo_convert(command_file, output_script, assert_success=True):
+    return run_with_bash(f"./peepo.py {command_file} --spool={SPOOL_DIR} --script > {output_script}", assert_success)
 
 
 def run_with_bash(cmd, assert_success=True):

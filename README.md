@@ -7,19 +7,35 @@
 
 ## Usage
 
-Command line options, see
+```shell
+./peepo <command file>
+```
+
+For more options, see:
 
 ```shell
 ./peepo --help
 ```
 
-Command keys:
+### Command keys
 
 | Key | Function |
 |-----|-----|
 | `<up arrow key>` | Go to previous command in input file |
 | `<down arrow key>` | Go to next command in input file |
 | `r` | Rerun all commands without using cached output |
+
+### peepo.bashrc
+
+Executed commands do not use user's bashrc/profile because it can mess
+with command execution. Instead, peepo sources `peepo.bashrc`, where you
+can add whatever you want.
+
+```shell
+cp peepo.bashrc.tmpl peepo.bashrc
+```
+
+### Misc
 
 Useful bash function to start peepo inside VSCode's integrated terminal:
 
