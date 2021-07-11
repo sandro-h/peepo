@@ -12,7 +12,7 @@ Options:
   -f --force               Don't use cached outputs but rerun all commands instead.
                            Only when peepo runs first time. On file changes or up/down caching will be used.
   -c --cols=<cols>         Overwrite number of columns in terminal (default: read via 'stty size')
-  -sc --script             Convert peepo file to a standalone shell script and write it to stdout.
+  -sc --script             Convert command file to a standalone shell script and write it to stdout.
 
 """
 import os
@@ -85,12 +85,12 @@ def run_peepo_script(args):
 
     state = {"up_to_offset": 0, "commands": parse_command_file(command_file)}
 
-    run_and_show_result(state["commands"], force=args["--force"])
+    run_commands_and_show_result(state["commands"], force=args["--force"])
 
     def on_command_file_changed():
         state["commands"] = parse_command_file(command_file)
         state["up_to_offset"] = 0
-        run_and_show_result(state["commands"])
+        run_commands_and_show_result(state["commands"])
 
     if not args["--once"]:
         stop = watch_file(command_file, on_command_file_changed)
@@ -106,23 +106,23 @@ def listen_for_keys(state):
             if ctrl_char == 27:
                 rest = sys.stdin.read(2)
 
+                updated_offset = state["up_to_offset"]
+                max_cmd_index = len(state["commands"]) - 1
                 if rest == "[A":  # up
-                    if state["up_to_offset"] < len(state["commands"]) - 1:
-                        state["up_to_offset"] += 1
-                        run_and_show_result(state["commands"], state["up_to_offset"])
+                    updated_offset = min(max_cmd_index, updated_offset + 1)
                 elif rest == "[B":  # down
-                    if state["up_to_offset"] > 0:
-                        state["up_to_offset"] -= 1
-                        run_and_show_result(state["commands"], state["up_to_offset"])
+                    updated_offset = max(0, updated_offset - 1)
                 elif rest == "[H":  # home
-                    state["up_to_offset"] = len(state["commands"]) - 1
-                    run_and_show_result(state["commands"], state["up_to_offset"])
+                    updated_offset = max_cmd_index
                 elif rest == "[F":  # end
-                    state["up_to_offset"] = 0
-                    run_and_show_result(state["commands"], state["up_to_offset"])
+                    updated_offset = 0
+
+                if updated_offset != state["up_to_offset"]:
+                    state["up_to_offset"] = updated_offset
+                    run_commands_and_show_result(state["commands"], state["up_to_offset"])
 
             elif ctrl_char == 114:  # r
-                run_and_show_result(state["commands"], state["up_to_offset"], force=True)
+                run_commands_and_show_result(state["commands"], state["up_to_offset"], force=True)
 
             elif ctrl_char in [3, 4, 113]:  # ctrl+c, ctrl+d, q
                 break
@@ -169,10 +169,10 @@ def parse_command_file(command_file):
                 else:
                     commands.append({"type": "command", "content": line})
 
-    return process_commands(commands)
+    return prepare_commands(commands)
 
 
-def process_commands(commands):
+def prepare_commands(commands):
     cur_hash = ""
     block_index = {}
     for command in commands:
@@ -194,13 +194,13 @@ def process_commands(commands):
     return commands
 
 
-def run_and_show_result(commands, up_to_offset=0, force=False):
+def run_commands_and_show_result(commands, up_to_offset=0, force=False):
     if not commands:
         print("Waiting for first command...")
         return
 
     up_to = max(0, len(commands) - up_to_offset)
-    success, cmds_ran, last_cmd_index = run(commands, up_to, force)
+    success, cmds_ran, last_cmd_index = run_commands(commands, up_to, force)
 
     status = "OK" if success else "FAILED"
     status += f" (ran {cmds_ran}/{up_to})\033[0m"
@@ -217,7 +217,7 @@ def run_and_show_result(commands, up_to_offset=0, force=False):
     print(status, end='', flush=True)
 
 
-def run(commands, up_to, force):
+def run_commands(commands, up_to, force):
     clear_terminal()
 
     cmds_ran = 0
@@ -238,7 +238,7 @@ def run(commands, up_to, force):
         cmds_ran += 1
 
         with open(stdout_file_path, 'wb') as stdout_file:
-            return_code = exec_command_in_shell(command["content"], stdin_file_path, stdout_file, use_color=last)
+            return_code = run_command(command["content"], stdin_file_path, stdout_file, use_color=last)
 
         acceptable_return_codes = [0]
         if is_grep_command(command["content"]):
@@ -256,7 +256,7 @@ def is_grep_command(cmd_content):
     return re.search(r"^\s*e?grep", cmd_content)
 
 
-def exec_command_in_shell(cmd, stdin_file_path, stdout_file, use_color):
+def run_command(cmd, stdin_file_path, stdout_file, use_color):
     if use_color:
 
         def read(pty_stdout):
@@ -369,5 +369,5 @@ class Handler(FileSystemEventHandler):
 
 if __name__ == "__main__":
     # execute only if run as a script
-    arguments = docopt(__doc__, version='peepo')
-    main(arguments)
+    ARGS = docopt(__doc__, version='peepo')
+    main(ARGS)
