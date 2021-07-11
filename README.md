@@ -21,8 +21,10 @@ For more options, see:
 
 | Key | Function |
 |-----|-----|
-| `<up arrow key>` | Go to previous command in input file |
-| `<down arrow key>` | Go to next command in input file |
+| `<up arrow key>` | Go to previous command in command file |
+| `<down arrow key>` | Go to next command in command file |
+| `<home key>` | Go to first command in command file |
+| `<end key>` | Go to last command in command file |
 | `r` | Rerun all commands without using cached output |
 
 ### peepo.bashrc

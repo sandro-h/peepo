@@ -114,6 +114,12 @@ def listen_for_keys(state):
                     if state["up_to_offset"] > 0:
                         state["up_to_offset"] -= 1
                         run_and_show_result(state["commands"], state["up_to_offset"])
+                elif rest == "[H":  # home
+                    state["up_to_offset"] = len(state["commands"]) - 1
+                    run_and_show_result(state["commands"], state["up_to_offset"])
+                elif rest == "[F":  # end
+                    state["up_to_offset"] = 0
+                    run_and_show_result(state["commands"], state["up_to_offset"])
 
             elif ctrl_char == 114:  # r
                 run_and_show_result(state["commands"], state["up_to_offset"], force=True)
