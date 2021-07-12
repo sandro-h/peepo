@@ -92,6 +92,14 @@ def test_run_error():
         f"{TEST_DIR}/testdata/test_error.output.txt") + "\nFAILED (ran 1/3) cmd 1/3: cat nonexistentfile"
 
 
+def test_uses_python_venv():
+    # Should use peepo script's venv when running python blocks
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_python_venv.input.sh")
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == "OK (ran 1/1) cmd 1/1: from docopt import docopt"
+
+
 def test_convert_script():
     convert_file = f"{SPOOL_DIR}/convert_output.sh"
     delete_spool()
