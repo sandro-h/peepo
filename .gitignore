@@ -6,3 +6,4 @@ dist/
 spool/
 test_file*
 peepo.bashrc
+helpers.py

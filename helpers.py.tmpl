@@ -1,0 +1,18 @@
+# Instantiated from helpers.py.tmpl.
+# This file content is prepended to all python blocks
+# Feel free to add your own helpers to helpers.py.
+import json
+import sys
+
+
+def from_json():
+    return json.load(sys.stdin)
+
+
+def from_string():
+    return sys.stdin.read()
+
+
+def from_lines():
+    for line in sys.stdin:
+        yield line.rstrip()

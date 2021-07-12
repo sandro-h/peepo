@@ -46,15 +46,16 @@ Currently only supports bash shell.
 | `<end key>` | Go to last command in command file |
 | `r` | Rerun all commands without using cached output |
 
-### peepo.bashrc
+### `peepo.bashrc`
 
 Executed commands do not use user's bashrc/profile because it can mess
-with command execution. Instead, peepo sources `peepo.bashrc`, where you
-can add whatever you want.
+with command execution. Instead, peepo sources `peepo.bashrc` (copied from `peepo.bashrc.tmpl` on first run).  
+You can add your own aliases, functions, etc to `peepo.bashrc`.
 
-```shell
-cp peepo.bashrc.tmpl peepo.bashrc
-```
+### `helpers.py`
+
+Python blocks are prepended with the content of `helpers.py` (copied from `helpers.py.tmpl` on first run).  
+You can add your own helper functions to `helpers.py`.
 
 ### Misc
 
@@ -98,8 +99,7 @@ Mix in a Python block:
 curl https://reqres.in/api/users?page=2
 jq '.data[0]'
 (py
-    # from_json is a helper function injected into all python blocks.
-    # it reads stdin as json.
+    # from_json is a helper function from helpers.py
     data = from_json()
     print(data['first_name'])
 py)

@@ -5,6 +5,7 @@ import shutil
 
 TEST_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(TEST_DIR, "spool")
+TOP_DIR = os.path.join(TEST_DIR, "..")
 
 CASES = [{
     "input": f"{TEST_DIR}/testdata/test1.input.sh",
@@ -93,11 +94,46 @@ def test_run_error():
 
 
 def test_uses_python_venv():
+    delete_spool()
     # Should use peepo script's venv when running python blocks
     returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_python_venv.input.sh")
     assert returncode == 0
     assert stderr == ""
     assert stdout == "OK (ran 1/1) cmd 1/1: from docopt import docopt"
+
+
+def test_helper_file_change():
+    delete_spool()
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_python.input.sh")
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == load_file(
+        f"{TEST_DIR}/testdata/test_python.output.txt") + "\n\nOK (ran 3/3) cmd 3/3: data = from_json() print(\"$oi: ..."
+
+    # Second run without any helper file change should cache
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_python.input.sh")
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == load_file(
+        f"{TEST_DIR}/testdata/test_python.output.txt") + "\n\nOK (ran 0/3) cmd 3/3: data = from_json() print(\"$oi: ..."
+
+    # Now change something in the helper file
+    helper_file_name = f"{TOP_DIR}/helpers.py"
+    with open(helper_file_name, 'w') as file:
+        file.write("""
+import json
+import sys
+
+def from_json():
+    return {"first_name": "changed!"}
+        """)
+
+    returncode, stdout, stderr = run_peepo(f"{TEST_DIR}/testdata/test_python.input.sh")
+    os.remove(helper_file_name)
+
+    assert returncode == 0
+    assert stderr == ""
+    assert stdout == "$oi: changed!\n\n\nOK (ran 1/3) cmd 3/3: data = from_json() print(\"$oi: ..."
 
 
 def test_convert_script():

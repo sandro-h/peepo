@@ -22,6 +22,7 @@ import pty
 import hashlib
 import re
 import sys
+import shutil
 from docopt import docopt
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -29,30 +30,16 @@ from watchdog.events import FileSystemEventHandler
 COLUMNS = 60
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
-LOAD_BASHRC_CMD = f'[ -f "{SCRIPT_DIR}/peepo.bashrc" ] && . {SCRIPT_DIR}/peepo.bashrc'
+BASHRC_FILE_NAME = f"{SCRIPT_DIR}/peepo.bashrc"
+LOAD_BASHRC_CMD = f'[ -f "{BASHRC_FILE_NAME}" ] && . {BASHRC_FILE_NAME}'
 MAX_SPOOL_FILES = 200
 BLOCK_DEFS = {
     "py": {
         "make_command": lambda spool_file: f"python {spool_file}",
-        "helper_functions": """
-import json
-import sys
-
-def from_json():
-    return json.load(sys.stdin)
-
-def from_string():
-    return sys.stdin.read()
-
-def from_lines():
-    for line in sys.stdin:
-        yield line.rstrip()
-
-"""
+        "helper_file": f"{SCRIPT_DIR}/helpers.py"
     },
     "sh": {
-        "make_command": lambda spool_file: f"bash {spool_file}",
-        "helper_functions": ""
+        "make_command": lambda spool_file: f"bash {spool_file}"
     }
 }
 
@@ -72,6 +59,7 @@ def main(args):
 
 def run_peepo_script(args):
 
+    prepare_helper_files()
     tidy_spool()
 
     global COLUMNS  # pylint: disable=global-statement
@@ -130,6 +118,20 @@ def listen_for_keys(state):
         os.system("stty -raw echo")
 
 
+def prepare_helper_files():
+    copy_from_template_if_exists(BASHRC_FILE_NAME)
+
+    for block_def in BLOCK_DEFS.values():
+        if "helper_file" in block_def:
+            copy_from_template_if_exists(block_def["helper_file"])
+
+
+def copy_from_template_if_exists(target_file):
+    src_template = f"{target_file}.tmpl"
+    if not file_exists(target_file) and file_exists(src_template):
+        shutil.copyfile(src_template, target_file)
+
+
 def tidy_spool():
     paths = sorted(Path(SPOOL_DIR).iterdir(), key=os.path.getmtime, reverse=True)
     for path in paths[MAX_SPOOL_FILES:]:
@@ -173,6 +175,14 @@ def parse_command_file(command_file):
 
 
 def prepare_commands(commands):
+
+    helpers = {}
+    for marker, block_def in BLOCK_DEFS.items():
+        if "helper_file" in block_def:
+            helper_content = load_helper_content(block_def["helper_file"])
+            if helper_content:
+                helpers[marker] = helper_content
+
     cur_hash = ""
     block_index = {}
     for command in commands:
@@ -185,13 +195,27 @@ def prepare_commands(commands):
         if block_def is not None:
             index = block_index.get(marker, 0)
             block_index[marker] = index + 1
+
+            command["script_content"] = command["content"]
+
+            if marker in helpers:
+                command["script_content"] = helpers[marker] + command["script_content"]
+                cur_hash = sha1(cur_hash + helpers[marker])
+                command["hash"] = cur_hash
+
             spool_file_name = os.path.join(SPOOL_DIR, f"{index}.{marker}")
-            command["script_content"] = block_def["helper_functions"] + command["content"]
             with open(spool_file_name, 'w') as spool_file:
                 spool_file.write(command["script_content"])
             command["content"] = block_def["make_command"](spool_file_name)
 
     return commands
+
+
+def load_helper_content(file_name):
+    if file_exists(file_name):
+        with open(file_name, 'r') as file:
+            return file.read() + "\n"
+    return ""
 
 
 def run_commands_and_show_result(commands, up_to_offset=0, force=False):
@@ -227,7 +251,7 @@ def run_commands(commands, up_to, force):
         stdout_file_path = get_col_output_file(command) if last else get_output_file(command)
 
         # Command executed previously, use cached output:
-        if not force and Path(stdout_file_path).is_file():
+        if not force and file_exists(stdout_file_path):
             # Touch cached file so housekeeping knows it was used recently:
             Path(stdout_file_path).touch()
             if last:
@@ -284,6 +308,8 @@ def build_bash_cmd(cmd):
 
 
 def convert_peepo_script(args):
+    prepare_helper_files()
+
     command_file = os.path.abspath(args["<command_file>"])
 
     commands = parse_command_file(command_file)
@@ -340,6 +366,10 @@ def ellipsis(content, max_len):
     if len(content) <= max_len:
         return content
     return content[:max_len - 3] + "..."
+
+
+def file_exists(file_name):
+    return Path(file_name).is_file()
 
 
 def watch_file(command_file, on_modified):
