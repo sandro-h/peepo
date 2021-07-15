@@ -42,6 +42,8 @@ BLOCK_DEFS = {
         "make_command": lambda spool_file: f"bash {spool_file}"
     }
 }
+# From https://stackoverflow.com/a/14693789:
+ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 
 def main(args):
@@ -248,7 +250,12 @@ def run_commands(commands, up_to, force):
     for k, command in enumerate(commands[:up_to]):
         last = k == up_to - 1
         stdin_file_path = get_output_file(commands[k - 1]) if k > 0 else None
-        stdout_file_path = get_col_output_file(command) if last else get_output_file(command)
+        out_file_path = get_output_file(command)
+        col_file_path = get_col_output_file(command)
+        stdout_file_path = col_file_path if last else out_file_path
+
+        if not last and not file_exists(out_file_path) and file_exists(col_file_path):
+            convert_col_to_out_file(col_file_path, out_file_path)
 
         # Command executed previously, use cached output:
         if not force and file_exists(stdout_file_path):
@@ -274,6 +281,13 @@ def run_commands(commands, up_to, force):
             return False, cmds_ran, k
 
     return True, cmds_ran, up_to - 1
+
+
+def convert_col_to_out_file(col_file_path, out_file_path):
+    with open(out_file_path, 'w') as out_file:
+        with open(col_file_path, 'r') as col_file:
+            for line in col_file:
+                out_file.write(strip_ansi_escape_codes(line))
 
 
 def is_grep_command(cmd_content):
@@ -354,8 +368,8 @@ def clear_terminal():
     print(chr(27) + "[2J\r")
 
 
-def strip_shell_control_chars(str_bytes):
-    return re.sub(r"\x1b\[[0-9;]*m", '', str_bytes.decode("utf8")).encode("utf8")
+def strip_ansi_escape_codes(string):
+    return ANSI_ESCAPE_PATTERN.sub('', string)
 
 
 def sha1(content):
