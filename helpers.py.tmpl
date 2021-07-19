@@ -16,3 +16,11 @@ def from_string():
 def from_lines():
     for line in sys.stdin:
         yield line.rstrip()
+
+
+def from_csv(delim=";", skip_header=False):
+    first = True
+    for line in sys.stdin:
+        if not (skip_header and first):
+            yield line.rstrip().split(delim)
+        first = False
