@@ -104,3 +104,14 @@ jq '.data[0]'
     print(data['first_name'])
 py)
 ```
+
+Mix in a jq block:
+
+```shell
+curl https://reqres.in/api/users?page=2
+(jq
+    # Pipes are optional and will be added if missing
+    .data[]
+    select(.first_name=="Michael")
+jq)
+```

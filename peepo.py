@@ -12,7 +12,7 @@ Options:
   -f --force               Don't use cached outputs but rerun all commands instead.
                            Only when peepo runs first time. On file changes or up/down caching will be used.
   -c --cols=<cols>         Overwrite number of columns in terminal (default: read via 'stty size')
-  -sc --script             Convert command file to a standalone shell script and write it to stdout.
+  --script                 Convert command file to a standalone shell script and write it to stdout.
 
 """
 import os
@@ -33,15 +33,6 @@ SPOOL_DIR = os.path.join(SCRIPT_DIR, 'spool')
 BASHRC_FILE_NAME = f"{SCRIPT_DIR}/peepo.bashrc"
 LOAD_BASHRC_CMD = f'[ -f "{BASHRC_FILE_NAME}" ] && . {BASHRC_FILE_NAME}'
 MAX_SPOOL_FILES = 200
-BLOCK_DEFS = {
-    "py": {
-        "make_command": lambda spool_file: f"python {spool_file}",
-        "helper_file": f"{SCRIPT_DIR}/helpers.py"
-    },
-    "sh": {
-        "make_command": lambda spool_file: f"bash {spool_file}"
-    }
-}
 # From https://stackoverflow.com/a/14693789:
 ANSI_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
@@ -144,7 +135,7 @@ def parse_command_file(command_file):
     commands = []
     block_content = ""
     block_indent = -1
-    in_block = False
+    active_block = None
 
     with open(command_file, 'r') as file:
         for line in file:
@@ -154,18 +145,18 @@ def parse_command_file(command_file):
 
             is_block_marker = False
             for marker in BLOCK_DEFS:
-                if line == "(" + marker and not in_block:
+                if line == "(" + marker and not active_block:
                     is_block_marker = True
-                    in_block = True
+                    active_block = marker
                     block_content = ""
                     block_indent = -1
-                elif line == marker + ")" and in_block:
+                elif line == marker + ")" and active_block:
                     is_block_marker = True
-                    in_block = False
+                    active_block = None
                     commands.append({"type": marker, "content": block_content})
 
             if not is_block_marker:
-                if in_block:
+                if active_block:
                     if block_indent < 0:
                         trimmed = line.lstrip()
                         block_indent = len(line) - len(trimmed)
@@ -190,7 +181,7 @@ def prepare_commands(commands):
     for command in commands:
         cur_hash = sha1(cur_hash + command["content"])
         command["hash"] = cur_hash
-        command["preview"] = re.sub(r"\s+", " ", command["content"].strip())
+        command["preview"] = make_preview(command["content"])
 
         marker = command["type"]
         block_def = BLOCK_DEFS.get(marker)
@@ -200,6 +191,10 @@ def prepare_commands(commands):
 
             command["script_content"] = command["content"]
 
+            if "mutate_block" in block_def:
+                command["script_content"] = block_def["mutate_block"](command["script_content"])
+                command["preview"] = make_preview(command["script_content"])
+
             if marker in helpers:
                 command["script_content"] = helpers[marker] + command["script_content"]
                 cur_hash = sha1(cur_hash + helpers[marker])
@@ -208,7 +203,7 @@ def prepare_commands(commands):
             spool_file_name = os.path.join(SPOOL_DIR, f"{index}.{marker}")
             with open(spool_file_name, 'w') as spool_file:
                 spool_file.write(command["script_content"])
-            command["content"] = block_def["make_command"](spool_file_name)
+            command["content"] = block_def["build_command"](spool_file_name)
 
     return commands
 
@@ -218,6 +213,10 @@ def load_helper_content(file_name):
         with open(file_name, 'r') as file:
             return file.read() + "\n"
     return ""
+
+
+def make_preview(content):
+    return re.sub(r"\s+", " ", content.strip())
 
 
 def run_commands_and_show_result(commands, up_to_offset=0, force=False):
@@ -342,13 +341,8 @@ set -euo pipefail
 
 
 def convert_to_shell_lines(command):
-    if command["type"] == "sh":
-        indent_script = command['script_content'].strip().replace("\n", "\n\t")
-        return f"(\n\t{indent_script}\n)"
-
-    if command["type"] == "py":
-        indent_script = command['script_content'].strip().replace("\n", "\n\t").replace("$", "\\$")
-        return f"python <(cat <<-EOF\n\t{indent_script}\nEOF\n)"
+    if command["type"] in BLOCK_DEFS:
+        return BLOCK_DEFS[command["type"]]["build_script"](command["script_content"])
 
     if is_grep_command(command["content"]):
         return command["content"] + " || true"
@@ -410,6 +404,62 @@ class Handler(FileSystemEventHandler):
         if event.event_type == 'modified':
             self.on_mod(event.src_path)
 
+
+def py_build_command(spool_file):
+    return f"python {spool_file}"
+
+
+def py_build_script(content):
+    indent_script = content.strip().replace("\n", "\n\t").replace("$", "\\$")
+    return f"python <(cat <<-EOF\n\t{indent_script}\nEOF\n)"
+
+
+def sh_build_command(spool_file):
+    return f"bash {spool_file}"
+
+
+def sh_build_script(content):
+    indent_script = content.strip().replace("\n", "\n\t")
+    return f"(\n\t{indent_script}\n)"
+
+
+def jq_build_command(spool_file):
+    return f"jq -f {spool_file}"
+
+
+def jq_build_script(content):
+    indent_script = content.strip().replace("\n", "\n\t")
+    return f"jq -f <(cat <<-EOF\n\t{indent_script}\nEOF\n)"
+
+
+def jq_mutate_block(block):
+    lines = block.split("\n")
+    last_had_pipe = False
+    for i, line in enumerate(lines):
+        if (not last_had_pipe and i > 0 and line.strip() != "" and not line.lstrip().startswith("|")
+                and not line.lstrip().startswith("#")):
+            lines[i] = "| " + line
+        last_had_pipe = line.rstrip().endswith("|")
+
+    return "\n".join(lines)
+
+
+BLOCK_DEFS = {
+    "py": {
+        "build_command": py_build_command,
+        "helper_file": f"{SCRIPT_DIR}/helpers.py",
+        "build_script": py_build_script
+    },
+    "sh": {
+        "build_command": sh_build_command,
+        "build_script": sh_build_script
+    },
+    "jq": {
+        "build_command": jq_build_command,
+        "build_script": jq_build_script,
+        "mutate_block": jq_mutate_block
+    }
+}
 
 if __name__ == "__main__":
     # execute only if run as a script

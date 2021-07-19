@@ -35,6 +35,14 @@ CASES = [{
     "input": f"{TEST_DIR}/testdata/test_mixed_blocks.input.sh",
     "output": f"{TEST_DIR}/testdata/test_mixed_blocks.output.txt",
     "status": "\n\nOK (ran 4/4) cmd 4/4: lines = from_lines() print([f\"o..."
+}, {
+    "input": f"{TEST_DIR}/testdata/test_jq_block.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_jq_block.output.txt",
+    "status": "\n\nOK (ran 2/2) cmd 2/2: .data[] | select(.first_name==\"..."
+}, {
+    "input": f"{TEST_DIR}/testdata/test_jq_block_explicit_pipes.input.sh",
+    "output": f"{TEST_DIR}/testdata/test_jq_block.output.txt",
+    "status": "\n\nOK (ran 2/2) cmd 2/2: .data[] | select(.first_name==\"..."
 }]
 
 
